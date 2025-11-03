@@ -15,3 +15,5 @@ cd chatbot-translator
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+![Uploading Screenshot 2025-11-03 at 5.42.47 PM.png…]()
