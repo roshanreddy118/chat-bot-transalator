@@ -1,174 +1,113 @@
 import logging
 import asyncio
-from typing import Optional
 import os
+from typing import Optional
+
+import requests
 
 logger = logging.getLogger(__name__)
 
+
 # -------------------------------------------
-# Hugging Face Inference API
+# HuggingFace Inference API
 # -------------------------------------------
 
-async def chat_with_huggingface_free(message: str, user_language: str = "en") -> Optional[str]:
-    """Use Hugging Face Inference API with free-tier key"""
+async def chat_with_huggingface(message: str, user_language: str = "en") -> Optional[str]:
+    """Primary HF API call with stable model"""
+    
+    api_key = os.getenv("HUGGINGFACE_API_KEY")
+    if not api_key:
+        logger.error("❌ Missing HuggingFace API key")
+        return None
+    
+    model = "mistralai/Mistral-7B-Instruct-v0.2"
+    url = f"https://api-inference.huggingface.co/models/{model}"
+
+    if user_language == "hi":
+        prompt = f"Respond in Hindi: {message}"
+    else:
+        prompt = f"Respond in English: {message}"
+
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 256,
+            "temperature": 0.7,
+            "do_sample": True
+        }
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    logger.info(f"➡ Calling HuggingFace model: {model}")
+
     try:
-        import requests
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: requests.post(url, json=payload, headers=headers, timeout=40)
+        )
 
-        api_key = os.getenv("HUGGINGFACE_API_KEY")
-        if not api_key:
-            logger.error("HUGGINGFACE_API_KEY missing")
+        logger.info(f"HF status: {response.status_code}")
+
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    text = result[0].get("generated_text", "").strip()
+                    if len(text) > 5:
+                        return text
+            except Exception as json_err:
+                logger.error(f"JSON parse err: {json_err}")
+                logger.error(f"Raw: {response.text[:200]}")
+
+        elif response.status_code == 503:
+            logger.warning("⚠ HF model loading… return None")
             return None
 
-        models_to_try = [
-            "google/flan-t5-xl",
-            "google/flan-t5-large",
-            "google/flan-t5-base",
-        ]
-
-        for model in models_to_try:
-            try:
-                url = f"https://api-inference.huggingface.co/models/{model}"
-
-                if user_language == "hi":
-                    prompt = f"Answer in Hindi: {message}"
-                else:
-                    prompt = f"Answer: {message}"
-
-                payload = {
-                    "inputs": prompt,
-                    "parameters": {
-                        "max_new_tokens": 250,
-                        "temperature": 0.7,
-                        "do_sample": True
-                    }
-                }
-
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
-                }
-
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: requests.post(url, headers=headers, json=payload, timeout=20)
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    if isinstance(result, list) and len(result) > 0:
-                        text = result[0].get("generated_text", "").strip()
-                        if len(text) > 10:
-                            logger.info(f"Success with HF model: {model}")
-                            return text
-
-                elif response.status_code == 503:
-                    logger.info(f"{model} loading, trying next...")
-                    continue
-
-            except Exception as e:
-                logger.error(f"{model} error: {e}")
-                continue
-
-        return None
+        else:
+            logger.error(f"⚠ HF Error {response.status_code}: {response.text[:200]}")
+            return None
 
     except Exception as e:
-        logger.error(f"HuggingFace API error: {e}")
-        return None
+        logger.error(f"Request error: {e}")
+
+    return None
 
 
 # -------------------------------------------
-# Hugging Face Spaces backup (optional)
-# -------------------------------------------
-
-async def chat_with_huggingface_spaces(message: str, user_language: str = "en") -> Optional[str]:
-    """Backup - use HF Spaces"""
-    try:
-        import requests
-        api_key = os.getenv("HUGGINGFACE_API_KEY")
-
-        spaces = [
-            "https://api-inference.huggingface.co/models/EleutherAI/gpt-j-6b",
-        ]
-
-        for url in spaces:
-            try:
-                prompt = f"Answer: {message}"
-
-                if user_language == "hi":
-                    prompt = f"Answer in Hindi: {message}"
-
-                payload = {
-                    "inputs": prompt,
-                    "parameters": {"max_new_tokens": 200}
-                }
-
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
-                }
-
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: requests.post(url, headers=headers, json=payload, timeout=20)
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    if isinstance(result, list) and len(result) > 0:
-                        text = result[0].get("generated_text", "").strip()
-                        if len(text) > 10:
-                            return text
-
-            except Exception as e:
-                logger.error(f"HF Space error: {e}")
-                continue
-
-        return None
-
-    except Exception as e:
-        logger.error(f"HuggingFace Spaces error: {e}")
-        return None
-
-
-# -------------------------------------------
-# Keyword Detection
+# Keyword Detection (kept minimal)
 # -------------------------------------------
 
 def is_ai_question(message: str) -> bool:
-    ai_keywords = [
-        "what", "explain", "how", "why", "define", "?", "kya", "batao", "samjhao"
-    ]
-    m = message.lower()
-    return any(word in m for word in ai_keywords)
+    keywords = ["what", "explain", "how", "why", "?",
+                "kya", "batao", "samjhao"]
+    msg = message.lower()
+    return any(k in msg for k in keywords)
 
 
 # -------------------------------------------
-# MAIN AI ROUTING FUNCTION
+# MAIN AI HANDLER
 # -------------------------------------------
 
 async def get_ai_response(message: str, user_language: str = "en") -> str:
-    """Get AI answer using HuggingFace only (works on Render)"""
+    """Route request to HuggingFace only"""
 
-    logger.info(f"AI Response for: {message}")
+    logger.info("⚙ Getting AI response...")
 
-    services = [
-        ("HuggingFace Free API", chat_with_huggingface_free),
-        ("HuggingFace Spaces", chat_with_huggingface_spaces),
-    ]
+    answer = await chat_with_huggingface(message, user_language)
+    
+    if answer:
+        logger.info("✔ HuggingFace succeeded")
+        return answer
+    
+    logger.warning("⚠ Fallback triggered")
 
-    for name, func in services:
-        try:
-            logger.info(f"Using {name}...")
-            result = await func(message, user_language)
-            if result and len(result.strip()) > 10:
-                return result.strip()
-        except Exception as e:
-            logger.error(f"{name} failed: {e}")
-
-    logger.warning("Fallback response triggered")
-
-    if user_language == "hi":
-        return "अभी मुझे जवाब देने में समस्या हो रही है, कृपया थोड़ी देर में दोबारा कोशिश करें। 😊"
-    return "I’m having trouble responding right now. Please try again in a moment. 😊"
+    return (
+        "अभी AI service उपलब्ध नहीं है, कृपया बाद में कोशिश करें। 🙏"
+        if user_language == "hi"
+        else "I'm having trouble responding right now. Please try again later 😊"
+    )
