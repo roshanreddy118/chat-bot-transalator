@@ -6,104 +6,69 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
+MODEL_NAME = "meta-llama/Llama-3-8b-instruct"  # Free-tier model
 
-# -------------------------------------------
-# Hugging Face Chat Completion API (Router)
-# -------------------------------------------
-
-async def chat_with_huggingface(message: str, user_language: str = "en") -> Optional[str]:
-    """AI conversation using Hugging Face ChatCompletions API via router"""
-
-    api_key = os.getenv("HUGGINGFACE_API_KEY")
+async def chat_with_together(message: str, user_language: str = "en") -> Optional[str]:
+    api_key = os.getenv("TOGETHER_API_KEY")
     if not api_key:
-        logger.error("❌ Missing HuggingFace API Key")
+        logger.error("❌ Missing Together API Key")
         return None
-
-    url = "https://router.huggingface.co/v1/chat/completions"
-    # Use a widely supported chat model
-    model = "HuggingFaceH4/zephyr-7b-beta"
-
-    if user_language == "hi":
-        system_prompt = "आप एक सहायक AI हैं। हमेशा हिंदी में उपयोगकर्ता के प्रश्न का उत्तर दें।"
-    else:
-        system_prompt = "You are a helpful assistant. Always reply to the user in English."
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message}
-        ],
-        "max_tokens": 300,
-        "temperature": 0.7
-    }
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
 
-    logger.info(f"➡ HF Request → Model: {model}")
+    system_msg = (
+        "You are a helpful assistant. Always reply in Hindi."
+        if user_language == "hi"
+        else "You are a helpful assistant. Always reply in English."
+    )
+
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": message}
+        ],
+        "max_tokens": 300,
+        "temperature": 0.7
+    }
 
     try:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: requests.post(url, json=payload, headers=headers, timeout=60)
-        )
-
-        logger.info(f"HF Status: {response.status_code}")
+        response = requests.post(TOGETHER_API_URL, json=payload, headers=headers, timeout=45)
+        logger.info(f"Together status: {response.status_code}")
 
         if response.status_code == 200:
             data = response.json()
-            logger.info(f"HF Response preview: {str(data)[:200]}")
+            logger.info(f"Together resp preview: {str(data)[:200]}")
+            return data["choices"][0]["message"]["content"]
 
-            try:
-                text = data["choices"][0]["message"]["content"].strip()
-                if len(text) > 3:
-                    return text
-            except Exception as parse_error:
-                logger.error(f"Parsing Error: {parse_error}")
-                logger.error(f"Raw Response: {data}")
-
-        else:
-            logger.error(f"HF Error Response: {response.text[:200]}")
-            return None
+        logger.error(f"Together error: {response.text[:200]}")
+        return None
 
     except Exception as e:
-        logger.error(f"HF Request Error: {e}")
+        logger.error(f"Together request error: {e}")
+        return None
 
-    return None
-
-
-# -------------------------------------------
-# Keyword Detection (Simple AI Intent Check)
-# -------------------------------------------
 
 def is_ai_question(message: str) -> bool:
-    keywords = [
-        "what", "explain", "how", "why", "define", "?",
-        "kya", "batao", "samjhao", "kaise"
-    ]
+    keywords = ["what", "explain", "how", "why", "define", "?", "kya", "batao", "kaise", "samjhao"]
     msg = message.lower()
     return any(k in msg for k in keywords)
 
 
-# -------------------------------------------
-# Main AI Response Handler
-# -------------------------------------------
-
 async def get_ai_response(message: str, user_language: str = "en") -> str:
-    logger.info(f"⚙ AI Request: {message}")
+    logger.info("⚙ Calling Together AI...")
+    reply = await chat_with_together(message, user_language)
 
-    answer = await chat_with_huggingface(message, user_language)
+    if reply:
+        return reply
 
-    if answer:
-        logger.info("✔ HF Response Success")
-        return answer
-
-    logger.warning("⚠ Fallback Used")
+    logger.warning("⚠ Fallback used")
     return (
-        "अभी AI उत्तर देने में समस्या आ रही है, कृपया कुछ देर बाद फिर से प्रयास करें। 🙏"
+        "AI सेवा में समस्या है, कृपया बाद में कोशिश करें। 🙏"
         if user_language == "hi"
         else "I'm having trouble responding right now. Please try again later 😊"
     )
