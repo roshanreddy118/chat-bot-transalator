@@ -8,11 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------
-# Hugging Face Inference API (Router version)
+# Hugging Face Inference API (Router v1)
 # -------------------------------------------
 
 async def chat_with_huggingface(message: str, user_language: str = "en") -> Optional[str]:
-    """Primary HuggingFace call using router endpoint"""
+    """Primary HuggingFace call using router v1 endpoint"""
 
     api_key = os.getenv("HUGGINGFACE_API_KEY")
     if not api_key:
@@ -20,7 +20,7 @@ async def chat_with_huggingface(message: str, user_language: str = "en") -> Opti
         return None
 
     model = "mistralai/Mistral-7B-Instruct-v0.2"
-    url = f"https://router.huggingface.co/hf-inference/models/{model}"
+    url = f"https://router.huggingface.co/hf-inference/v1/models/{model}"
 
     if user_language == "hi":
         prompt = f"उत्तर हिंदी में दें: {message}"
@@ -41,22 +41,24 @@ async def chat_with_huggingface(message: str, user_language: str = "en") -> Opti
         "Authorization": f"Bearer {api_key}"
     }
 
-    logger.info(f"➡ Calling HuggingFace Router model: {model}")
+    logger.info(f"➡ Calling HuggingFace Router v1 model: {model}")
 
     try:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: requests.post(url, json=payload, headers=headers, timeout=45)
+            lambda: requests.post(url, json=payload, headers=headers, timeout=60)
         )
 
         logger.info(f"HF status: {response.status_code}")
 
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"HF response: {str(result)[:150]}")
-            if isinstance(result, list) and len(result) > 0:
-                text = result[0].get("generated_text", "").strip()
+            logger.info(f"HF response preview: {str(result)[:200]}")
+
+            # New router response format
+            if isinstance(result, dict) and "generated_text" in result:
+                text = result["generated_text"].strip()
                 if len(text) > 5:
                     return text
 
