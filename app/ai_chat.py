@@ -8,11 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------
-# Hugging Face Chat Completion API
+# Hugging Face Chat Completion API (Router)
 # -------------------------------------------
 
 async def chat_with_huggingface(message: str, user_language: str = "en") -> Optional[str]:
-    """AI conversation using Hugging Face ChatCompletions API"""
+    """AI conversation using Hugging Face ChatCompletions API via router"""
 
     api_key = os.getenv("HUGGINGFACE_API_KEY")
     if not api_key:
@@ -20,7 +20,8 @@ async def chat_with_huggingface(message: str, user_language: str = "en") -> Opti
         return None
 
     url = "https://router.huggingface.co/v1/chat/completions"
-    model = "mistralai/Mistral-7B-Instruct-v0.2"
+    # Use a widely supported chat model
+    model = "HuggingFaceH4/zephyr-7b-beta"
 
     if user_language == "hi":
         system_prompt = "आप एक सहायक AI हैं। हमेशा हिंदी में उपयोगकर्ता के प्रश्न का उत्तर दें।"
@@ -56,7 +57,6 @@ async def chat_with_huggingface(message: str, user_language: str = "en") -> Opti
             data = response.json()
             logger.info(f"HF Response preview: {str(data)[:200]}")
 
-            # Extract content properly
             try:
                 text = data["choices"][0]["message"]["content"].strip()
                 if len(text) > 3:
